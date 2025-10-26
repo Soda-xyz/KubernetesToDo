@@ -12,8 +12,8 @@ spec:
     helm:
       values: |-
         image:
-          repository: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPOSITORY>"
-          tag: "<IMAGE_TAG>"
+          repository: "984649216408.dkr.ecr.eu-west-1.amazonaws.com/kuber-todo"
+          tag: "latest"
         ingress:
           host: "todo.example.com"
         mongodb:
