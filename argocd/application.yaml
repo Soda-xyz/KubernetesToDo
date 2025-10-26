@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kuber-todo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/<owner>/<repo>.git' # REPLACE with your repo URL
+    targetRevision: HEAD
+    path: k8s/helm/kuber-todo
+    helm:
+      values: |-
+        image:
+          repository: "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPOSITORY>"
+          tag: "<IMAGE_TAG>"
+        ingress:
+          host: "todo.example.com"
+        mongodb:
+          rootPassword: "change-me"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

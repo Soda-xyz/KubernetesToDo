@@ -1,0 +1,140 @@
+name: CI / Build and Push to ECR
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # You can set defaults here or keep them fully in secrets; these are placeholders
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+          aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+        run: |
+          REGISTRY=${{ env.ECR_REGISTRY }}
+          REPO=${{ secrets.ECR_REPOSITORY }}
+          TAG=${{ env.IMAGE_TAG }}
+          echo "Building ${REGISTRY}/${REPO}:${TAG}"
+          docker build -t ${REGISTRY}/${REPO}:${TAG} ./backend
+
+      - name: Push image to ECR
+        env:
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+        run: |
+          REGISTRY=${{ env.ECR_REGISTRY }}
+          REPO=${{ secrets.ECR_REPOSITORY }}
+          TAG=${{ env.IMAGE_TAG }}
+          docker push ${REGISTRY}/${REPO}:${TAG}
+
+      - name: Configure kubectl for EKS
+        # requires AWS credentials + EKS cluster name in secrets
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+
+      - name: Create/update MongoDB Kubernetes Secret
+        # uses GitHub secret MONGODB_ROOT_PASSWORD and optional K8S_MONGODB_SECRET_NAME
+        env:
+          SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
+          MONGO_PASSWORD: ${{ secrets.MONGODB_ROOT_PASSWORD }}
+          K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+        run: |
+          : "Ensure K8s namespace default if not provided"
+          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=default; fi
+          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-secret; fi
+          echo "Creating/updating secret $SECRET_NAME in namespace $K8S_NAMESPACE"
+          kubectl create secret generic "$SECRET_NAME" --from-literal=mongodb-root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Patch ArgoCD Application with Helm value overrides
+        # Patch ArgoCD Application CR to set helm.values for secret name and image repo/tag
+        env:
+          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
+          ARGO_NAMESPACE: ${{ secrets.ARGOCD_NAMESPACE }}
+          REGISTRY: ${{ env.ECR_REGISTRY }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
+          SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
+          K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+        run: |
+          if [ -z "$ARGO_NAMESPACE" ]; then ARGO_NAMESPACE=argocd; fi
+          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=default; fi
+          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-secret; fi
+          echo "Patching ArgoCD Application $ARGO_APP_NAME in namespace $ARGO_NAMESPACE"
+          # Build helm values string (YAML) - includes secret ref and image repo/tag
+          VALUES_FILE=$(mktemp)
+          cat > "$VALUES_FILE" <<EOF
+mongodb:
+  rootPasswordSecretName: "$SECRET_NAME"
+  rootPasswordKey: "mongodb-root-password"
+image:
+  repository: "${REGISTRY}/${REPO}"
+  tag: "${TAG}"
+EOF
+
+          PATCH_FILE=$(mktemp)
+          # application.spec.source.helm.values is a string containing YAML; we put it in JSON for patch
+          cat > "$PATCH_FILE" <<PATCH
+{"spec":{"source":{"helm":{"values":$(python3 - <<PY
+import json,sys
+v=open('$VALUES_FILE').read()
+print(json.dumps(v))
+PY
+)}}}}
+PATCH
+
+          kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$(cat $PATCH_FILE)"
+
+      - name: Confirm ArgoCD sync (optional)
+        if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_TOKEN }}
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
+        run: |
+          echo "Triggering ArgoCD sync for ${ARGO_APP_NAME}..."
+          curl -k -s -X POST \
+            -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" \
+            -d '{"strategy": {"hook": {}}}'
+
+# Required repository secrets (set these in GitHub repository settings):
+# - AWS_ACCESS_KEY_ID
+# - AWS_SECRET_ACCESS_KEY
+# - AWS_REGION (e.g. us-east-1)
+# - AWS_ACCOUNT_ID (your AWS account number)
+# - ECR_REPOSITORY (e.g. my-ecr-repo/kuber-todo)
+# Optional secrets for ArgoCD automated sync:
+# - ARGOCD_SERVER (https://argocd.example.com)
+# - ARGOCD_TOKEN (Argocd API token)
+# - ARGOCD_APP_NAME (the ArgoCD Application name to sync)

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kuber-todo.fullname" . }}-api
+  labels:
+    app: {{ include "kuber-todo.name" . }}
+    component: api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "kuber-todo.name" . }}
+      component: api
+  template:
+    metadata:
+      labels:
+        app: {{ include "kuber-todo.name" . }}
+        component: api
+    spec:
+      containers:
+        - name: kuber-todo-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.service.port }}"
+            - name: Mongo__ConnectionString
+              value: "mongodb://{{ include "kuber-todo.fullname" . }}-mongodb:{{ .Values.mongodb.service.port }}"
+            - name: Mongo__Database
+              value: "{{ .Values.mongodb.database }}"
+          resources: {{ toYaml .Values.resources | nindent 12 }}

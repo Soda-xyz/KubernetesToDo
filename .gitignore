@@ -1,0 +1,16 @@
+
+.vs/
+.vscode/
+.idea/
+
+
+bin/
+obj/
+publish/
+
+
+appsettings.*.json
+secrets.json
+
+
+

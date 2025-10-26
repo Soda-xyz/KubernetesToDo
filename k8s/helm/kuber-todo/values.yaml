@@ -1,0 +1,46 @@
+# Default values for kuber-todo chart
+# Edit to match your registry and ingress host
+
+image:
+  repository: "<registry>/kuber-todo"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  host: "todo.example.com"
+  className: ""
+  annotations: {}
+  tls: []
+
+mongodb:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: bitnami/mongodb
+    tag: 6.0.12
+  rootUsername: root
+  rootPassword: ""
+  rootPasswordSecretName: ""
+  rootPasswordKey: "mongodb-root-password"
+  database: kuber_todo_db
+  service:
+    port: 27017
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

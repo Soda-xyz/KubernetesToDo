@@ -1,0 +1,60 @@
+{{- if .Values.mongodb.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kuber-todo.fullname" . }}-mongodb
+  labels:
+    app: {{ include "kuber-todo.name" . }}
+    component: mongodb
+spec:
+  serviceName: {{ include "kuber-todo.fullname" . }}-mongodb-headless
+  replicas: {{ .Values.mongodb.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "kuber-todo.name" . }}
+      component: mongodb
+  template:
+    metadata:
+      labels:
+        app: {{ include "kuber-todo.name" . }}
+        component: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: "{{ .Values.mongodb.image.repository }}:{{ .Values.mongodb.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.mongodb.service.port }}
+              name: mongodb
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "{{ .Values.mongodb.rootUsername }}"
+              {{- if .Values.mongodb.rootPasswordSecretName }}
+              - name: MONGO_INITDB_ROOT_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: "{{ .Values.mongodb.rootPasswordSecretName }}"
+                    key: "{{ .Values.mongodb.rootPasswordKey }}"
+              {{- else if .Values.mongodb.rootPassword }}
+              - name: MONGO_INITDB_ROOT_PASSWORD
+                value: "{{ .Values.mongodb.rootPassword }}"
+              {{- else }}
+              # No MongoDB root password provided via secret or value.
+              {{- end }}
+            - name: MONGO_INITDB_DATABASE
+              value: "{{ .Values.mongodb.database }}"
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /bitnami/mongodb
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.mongodb.persistence.size }}
+        {{- if .Values.mongodb.persistence.storageClass }}
+        storageClassName: "{{ .Values.mongodb.persistence.storageClass }}"
+        {{- end }}
+{{- end }}
