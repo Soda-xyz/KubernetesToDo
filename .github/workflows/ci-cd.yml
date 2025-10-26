@@ -99,12 +99,15 @@ jobs:
           kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$PATCH_JSON"
 
       - name: Confirm ArgoCD sync (optional)
-        if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_TOKEN }}
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
           ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
         run: |
+          if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ]; then
+            echo "ARGOCD_SERVER or ARGOCD_TOKEN not set; skipping ArgoCD sync"
+            exit 0
+          fi
           echo "Triggering ArgoCD sync for ${ARGO_APP_NAME}..."
           curl -k -s -X POST \
             -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
