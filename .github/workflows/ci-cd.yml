@@ -69,11 +69,12 @@ jobs:
           MONGO_PASSWORD: ${{ secrets.MONGODB_ROOT_PASSWORD }}
           K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
         run: |
-          : "Ensure K8s namespace default if not provided"
-          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=default; fi
-          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-secret; fi
+          : "Ensure K8s namespace 'kuber-todo' if not provided"
+          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
+          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
           echo "Creating/updating secret $SECRET_NAME in namespace $K8S_NAMESPACE"
-          kubectl create secret generic "$SECRET_NAME" --from-literal=mongodb-root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          # create secret with key 'root-password' to match ArgoCD helm values
+          kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Patch ArgoCD Application with Helm value overrides
         # Patch ArgoCD Application CR to set helm.values for secret name and image repo/tag
@@ -87,15 +88,15 @@ jobs:
           K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
         run: |
           if [ -z "$ARGO_NAMESPACE" ]; then ARGO_NAMESPACE=argocd; fi
-          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=default; fi
-          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-secret; fi
+          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
+          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
           echo "Patching ArgoCD Application $ARGO_APP_NAME in namespace $ARGO_NAMESPACE"
           # Build helm values string (YAML) - includes secret ref and image repo/tag
           VALUES_FILE=$(mktemp)
           cat > "$VALUES_FILE" <<EOF
 mongodb:
   rootPasswordSecretName: "$SECRET_NAME"
-  rootPasswordKey: "mongodb-root-password"
+  rootPasswordKey: "root-password"
 image:
   repository: "${REGISTRY}/${REPO}"
   tag: "${TAG}"
