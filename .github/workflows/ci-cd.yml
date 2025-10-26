@@ -91,29 +91,12 @@ jobs:
           if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
           if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
           echo "Patching ArgoCD Application $ARGO_APP_NAME in namespace $ARGO_NAMESPACE"
-          # Build helm values string (YAML) - includes secret ref and image repo/tag
-          VALUES_FILE=$(mktemp)
-          cat > "$VALUES_FILE" <<EOF
-mongodb:
-  rootPasswordSecretName: "$SECRET_NAME"
-  rootPasswordKey: "root-password"
-image:
-  repository: "${REGISTRY}/${REPO}"
-  tag: "${TAG}"
-EOF
+          # Build helm.values as a single string with \n newlines
+          VALUES="mongodb:\n  rootPasswordSecretName: \"$SECRET_NAME\"\n  rootPasswordKey: \"root-password\"\nimage:\n  repository: \"${REGISTRY}/${REPO}\"\n  tag: \"${TAG}\""
 
-          PATCH_FILE=$(mktemp)
-          # application.spec.source.helm.values is a string containing YAML; we put it in JSON for patch
-          cat > "$PATCH_FILE" <<PATCH
-{"spec":{"source":{"helm":{"values":$(python3 - <<PY
-import json,sys
-v=open('$VALUES_FILE').read()
-print(json.dumps(v))
-PY
-)}}}}
-PATCH
+          PATCH_JSON=$(printf "%b" "$VALUES" | python3 -c 'import sys,json; v=sys.stdin.read(); print(json.dumps({"spec":{"source":{"helm":{"values":v}}}}))')
 
-          kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$(cat $PATCH_FILE)"
+          kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$PATCH_JSON"
 
       - name: Confirm ArgoCD sync (optional)
         if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_TOKEN }}
