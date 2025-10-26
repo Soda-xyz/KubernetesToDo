@@ -62,6 +62,24 @@ jobs:
         run: |
           aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
 
+      - name: Debug AWS identity & kubeconfig
+        # Quick checks to verify the job's AWS identity and kubeconfig are correct
+        run: |
+          echo "AWS caller identity:"
+          aws sts get-caller-identity || true
+
+          echo "--- kubeconfig current-context ---"
+          kubectl config current-context || true
+
+          echo "--- kubectl cluster-info ---"
+          kubectl cluster-info || true
+
+          echo "--- can the current identity create secrets in target ns? ---"
+          kubectl auth can-i create secrets -n "${{ secrets.K8S_NAMESPACE }}" || kubectl auth can-i create secrets -n "kuber-todo" || true
+
+          echo "--- try listing nodes (connectivity + auth) ---"
+          kubectl get nodes || true
+
       - name: Create/update MongoDB Kubernetes Secret
         # uses GitHub secret MONGODB_ROOT_PASSWORD and optional K8S_MONGODB_SECRET_NAME
         env:
