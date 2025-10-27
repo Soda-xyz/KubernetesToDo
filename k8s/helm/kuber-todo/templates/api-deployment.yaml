@@ -17,6 +17,10 @@ spec:
         app: {{ include "kuber-todo.name" . }}
         component: api
     spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
       containers:
         - name: kuber-todo-api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -31,3 +35,23 @@ spec:
             - name: Mongo__Database
               value: "{{ .Values.mongodb.database }}"
           resources: {{ toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.probes.api.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.api.liveness.path | quote }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.probes.api.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.api.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.api.liveness.failureThreshold }}
+            timeoutSeconds: {{ .Values.probes.api.liveness.timeoutSeconds }}
+          {{- end }}
+          {{- if .Values.probes.api.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.api.readiness.path | quote }}
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.probes.api.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.api.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.api.readiness.failureThreshold }}
+            timeoutSeconds: {{ .Values.probes.api.readiness.timeoutSeconds }}
+          {{- end }}

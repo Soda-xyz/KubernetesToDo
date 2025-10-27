@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-secret-manager-binding
+  namespace: kuber-todo
+subjects:
+- kind: User
+  name: github-actions-kuber-todo
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: ci-secret-manager
+  apiGroup: rbac.authorization.k8s.io

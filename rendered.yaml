@@ -1,0 +1,182 @@
+---
+# Source: kuber-todo/templates/api-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: release-name-kuber-todo-api
+  labels:
+    app: kuber-todo
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app: kuber-todo
+    component: api
+---
+# Source: kuber-todo/templates/mongo-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: release-name-kuber-todo-mongodb
+  labels:
+    app: kuber-todo
+spec:
+  type: ClusterIP
+  ports:
+    - port: 27017
+      targetPort: 27017
+      name: mongodb
+  selector:
+    app: kuber-todo
+    component: mongodb
+---
+# Source: kuber-todo/templates/mongo-service.yaml
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: release-name-kuber-todo-mongodb-headless
+  labels:
+    app: kuber-todo
+spec:
+  clusterIP: None
+  ports:
+    - port: 27017
+      targetPort: 27017
+      name: mongodb
+  selector:
+    app: kuber-todo
+    component: mongodb
+---
+# Source: kuber-todo/templates/api-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: release-name-kuber-todo-api
+  labels:
+    app: kuber-todo
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kuber-todo
+      component: api
+  template:
+    metadata:
+      labels:
+        app: kuber-todo
+        component: api
+    spec:
+      containers:
+        - name: kuber-todo-api
+          image: "<registry>/kuber-todo:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:80"
+            - name: Mongo__ConnectionString
+              value: "mongodb://release-name-kuber-todo-mongodb:27017"
+            - name: Mongo__Database
+              value: "kuber_todo_db"
+          resources: 
+            {}
+          livenessProbe:
+            httpGet:
+              path: "/health"
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: "/health"
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 3
+---
+# Source: kuber-todo/templates/mongo-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: release-name-kuber-todo-mongodb
+  labels:
+    app: kuber-todo
+    component: mongodb
+spec:
+  serviceName: release-name-kuber-todo-mongodb-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kuber-todo
+      component: mongodb
+  template:
+    metadata:
+      labels:
+        app: kuber-todo
+        component: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: "bitnami/mongodb:6.0.12"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 27017
+              name: mongodb
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "root"
+              # No MongoDB root password provided via secret or value.
+            - name: MONGO_INITDB_DATABASE
+              value: "kuber_todo_db"
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /bitnami/mongodb
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Source: kuber-todo/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: release-name-kuber-todo-ingress
+  annotations:
+spec:
+  rules:
+    - host: todo.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: release-name-kuber-todo-api
+                port:
+                  number: 80

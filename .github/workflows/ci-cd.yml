@@ -80,6 +80,37 @@ jobs:
           echo "--- try listing nodes (connectivity + auth) ---"
           kubectl get nodes || true
 
+      - name: Install Helm
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Helm lint chart
+        run: |
+          helm lint k8s/helm/kuber-todo
+
+      - name: Render Helm templates and validate with kubectl (dry-run)
+        env:
+          KUBE_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+        run: |
+          # use values.yaml defaults; this ensures templates render correctly
+          helm template k8s/helm/kuber-todo --values k8s/helm/kuber-todo/values.yaml > /tmp/rendered.yaml
+          # kubectl apply --dry-run requires a kubeconfig (we configured earlier). This validates against client-side schema and templating issues.
+          kubectl apply --dry-run=client -f /tmp/rendered.yaml
+
+      - name: Install kubeval
+        run: |
+          set -e
+          KUBEVAL_VERSION="0.16.1"
+          echo "Installing kubeval ${KUBEVAL_VERSION}"
+          curl -sL "https://github.com/instrumenta/kubeval/releases/download/${KUBEVAL_VERSION}/kubeval-linux-amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/kubeval /usr/local/bin/kubeval
+
+      - name: Validate rendered manifests with kubeval
+        run: |
+          echo "Validating /tmp/rendered.yaml with kubeval"
+          # Use a reasonable Kubernetes version for schema validation; adjust if your cluster uses a different version
+          kubeval --strict --kubernetes-version "1.27.0" /tmp/rendered.yaml
+
       - name: Create/update MongoDB Kubernetes Secret
         # uses GitHub secret MONGODB_ROOT_PASSWORD and optional K8S_MONGODB_SECRET_NAME
         env:
@@ -116,22 +147,110 @@ jobs:
 
           kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$PATCH_JSON"
 
-      - name: Confirm ArgoCD sync (optional)
+      - name: Trigger ArgoCD sync
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
           ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
         run: |
-          if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ]; then
-            echo "ARGOCD_SERVER or ARGOCD_TOKEN not set; skipping ArgoCD sync"
-            exit 0
+          if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ] || [ -z "${ARGO_APP_NAME}" ]; then
+            echo "ARGOCD_SERVER, ARGOCD_TOKEN or ARGO_APP_NAME is not set. These are required to trigger an automated ArgoCD sync."
+            exit 1
           fi
           echo "Triggering ArgoCD sync for ${ARGO_APP_NAME}..."
-          curl -k -s -X POST \
+          # Trigger a sync via ArgoCD REST API. This call will make ArgoCD reconcile the updated Helm values.
+          resp=$(curl -k -s -w "HTTPSTATUS:%{http_code}" -X POST \
             -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
             -H 'Content-Type: application/json' \
             "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" \
-            -d '{"strategy": {"hook": {}}}'
+            -d '{}')
+          status=$(echo "$resp" | sed -e 's/.*HTTPSTATUS://')
+          body=$(echo "$resp" | sed -e 's/HTTPSTATUS:.*//')
+          echo "ArgoCD sync response status: $status"
+          echo "$body"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "ArgoCD sync API returned non-2xx status: $status"
+            exit 1
+          fi
+
+  smoke-test:
+    name: Smoke test (post-deploy)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials for smoke test
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Configure kubectl for EKS
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+
+      - name: Wait for ArgoCD Application to be Synced and Healthy
+        env:
+          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
+        run: |
+          if [ -z "${ARGO_APP_NAME}" ]; then echo "ARGOCD_APP_NAME must be set for smoke tests"; exit 1; fi
+          echo "Waiting up to 10 minutes for ArgoCD Application ${ARGO_APP_NAME} to be Synced and Healthy..."
+          timeout=$((10*60))
+          interval=5
+          elapsed=0
+          while [ $elapsed -lt $timeout ]; do
+            sync=$(kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
+            health=$(kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o jsonpath='{.status.health.status}' 2>/dev/null || true)
+            echo "sync=$sync health=$health"
+            if [ "$sync" = 'Synced' ] && [ "$health" = 'Healthy' ]; then
+              echo "Application is Synced and Healthy"
+              break
+            fi
+            sleep $interval
+            elapsed=$((elapsed + interval))
+          done
+          if [ $elapsed -ge $timeout ]; then
+            echo "Timed out waiting for ArgoCD Application to be Synced and Healthy"
+            kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o yaml || true
+            exit 1
+          fi
+
+      - name: Discover application host (Ingress or LoadBalancer)
+        env:
+          NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+        run: |
+          if [ -z "$NAMESPACE" ]; then NAMESPACE=kuber-todo; fi
+          # Try to find an Ingress host first
+          HOST=$(kubectl -n $NAMESPACE get ingress -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || true)
+          if [ -z "$HOST" ]; then
+            # Try LoadBalancer hostname/IP from service
+            HOST=$(kubectl -n $NAMESPACE get svc -l app.kubernetes.io/name=kuber-todo -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          fi
+          if [ -z "$HOST" ]; then
+            HOST=$(kubectl -n $NAMESPACE get svc -l app.kubernetes.io/name=kuber-todo -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          fi
+          if [ -z "$HOST" ]; then
+            echo "Could not discover an ingress host or loadBalancer address for the application in namespace $NAMESPACE"; exit 1
+          fi
+          echo "APPLICATION_HOST=$HOST" >> $GITHUB_ENV
+
+      - name: Run HTTP smoke tests
+        run: |
+          HOST="$APPLICATION_HOST"
+          echo "Testing HTTP GET http://$HOST/api/todo"
+          # Try HTTP first, fall back to HTTPS if needed
+          if curl -sSf "http://$HOST/api/todo" -o /dev/null; then
+            echo "GET /api/todo succeeded (http)"
+          elif curl -sSf "https://$HOST/api/todo" -o /dev/null -k; then
+            echo "GET /api/todo succeeded (https)"
+          else
+            echo "Smoke test failed: /api/todo not reachable at $HOST"; exit 1
+          fi
 
 # Required repository secrets (set these in GitHub repository settings):
 # - AWS_ACCESS_KEY_ID
