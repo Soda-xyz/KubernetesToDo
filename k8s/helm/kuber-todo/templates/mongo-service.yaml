@@ -5,7 +5,7 @@ metadata:
   name: {{ include "kuber-todo.fullname" . }}-mongodb
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "kuber-todo.name" . }}
+{{ include "kuber-todo.labels" (dict "root" . "component" "mongodb" "version" .Values.mongodb.image.tag) | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -24,7 +24,7 @@ metadata:
   name: {{ include "kuber-todo.fullname" . }}-mongodb-headless
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "kuber-todo.name" . }}
+{{ include "kuber-todo.labels" (dict "root" . "component" "mongodb" "version" .Values.mongodb.image.tag) | nindent 4 }}
 spec:
   clusterIP: None
   ports:

@@ -15,7 +15,8 @@ service:
 ingress:
   enabled: true
   host: "todo.example.com"
-  className: ""
+  # Default to the nginx ingress class for the MVP; override in values or with --set when installing
+  className: "nginx"
   annotations: {}
   tls: []
 

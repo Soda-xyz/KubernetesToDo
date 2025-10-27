@@ -4,8 +4,7 @@ metadata:
   name: {{ include "kuber-todo.fullname" . }}-api
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "kuber-todo.name" . }}
-    component: api
+{{ include "kuber-todo.labels" (dict "root" . "component" "api" "version" .Values.image.tag) | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -15,8 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ include "kuber-todo.name" . }}
-        component: api
+{{ include "kuber-todo.labels" (dict "root" . "component" "api" "version" .Values.image.tag) | nindent 8 }}
     spec:
       {{- if .Values.imagePullSecrets }}
       imagePullSecrets:

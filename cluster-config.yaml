@@ -1,0 +1,38 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: final-disco-ladybug
+  region: eu-west-1
+  version: "1.32"
+
+iam:
+  withOIDC: true
+
+vpc:
+  cidr: "10.0.0.0/16"
+  nat:
+    gateway: Single
+  subnets:
+    public:
+      eu-west-1a:
+        cidr: 10.0.0.0/19
+      eu-west-1b:
+        cidr: 10.0.32.0/19
+    private:
+      eu-west-1a:
+        cidr: 10.0.64.0/19
+      eu-west-1b:
+        cidr: 10.0.96.0/19
+
+nodeGroups:
+  - name: ng-default
+    instanceType: t3.small
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 3
+    volumeSize: 20
+    privateNetworking: true
+    iam:
+      withAddonPolicies:
+        autoScaler: false

@@ -5,6 +5,8 @@ kind: Ingress
 metadata:
   name: {{ $svc }}-ingress
   namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "kuber-todo.labels" (dict "root" . "component" "ingress" "version" .Values.image.tag) | nindent 4 }}
   annotations:
     {{- range $k, $v := .Values.ingress.annotations }}
     {{ $k }}: {{ $v | quote }}

@@ -1,0 +1,31 @@
+{{- if and .Values.pdb .Values.pdb.enabled }}
+{{- $root := . -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kuber-todo.fullname" $root }}-api-pdb
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "kuber-todo.labels" (dict "root" $root "component" "api" "version" $root.Values.image.tag) | nindent 4 }}
+spec:
+  minAvailable: {{ (int (default 1 $root.Values.pdb.api.minAvailable)) }}
+  selector:
+    matchLabels:
+      app: {{ include "kuber-todo.name" $root }}
+      component: api
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kuber-todo.fullname" $root }}-mongodb-pdb
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "kuber-todo.labels" (dict "root" $root "component" "mongodb" "version" $root.Values.mongodb.image.tag) | nindent 4 }}
+spec:
+  minAvailable: {{ (int (default 1 $root.Values.pdb.mongodb.minAvailable)) }}
+  selector:
+    matchLabels:
+      app: {{ include "kuber-todo.name" $root }}
+      component: mongodb
+{{- end }}

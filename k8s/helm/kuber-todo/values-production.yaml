@@ -1,0 +1,45 @@
+# Minimal production values for kuber-todo (small but safer defaults)
+
+replicaCount: 2
+
+image:
+  repository: "<registry>/kuber-todo"
+  tag: "stable"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  host: "todo.example.com"
+  className: "nginx"
+  annotations: {}
+  tls: []
+
+resources:
+  limits:
+    cpu: "250m"
+    memory: "256Mi"
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+
+mongodb:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    # Recommended storageClass for AWS EBS (adjust to your cluster)
+    storageClass: "gp2"
+  rootPassword: ""
+  rootPasswordSecretName: ""
+
+# PodDisruptionBudget configuration (disabled by default) - enable in production
+pdb:
+  enabled: true
+  api:
+    minAvailable: 1
+  mongodb:
+    minAvailable: 1

@@ -2,7 +2,7 @@ name: CI / Build and Push to ECR
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   id-token: write
@@ -10,7 +10,6 @@ permissions:
   packages: write
 
 env:
-  # You can set defaults here or keep them fully in secrets; these are placeholders
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -21,20 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Verify AWS identity (diagnostic)
-        run: |
-          echo '--- AWS caller identity ---'
-          aws sts get-caller-identity
-
-      - name: Describe EKS cluster (diagnostic)
-        run: |
-          aws eks describe-cluster --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}" --output yaml || true
 
       - name: Login to Amazon ECR
         env:
@@ -45,113 +35,59 @@ jobs:
           echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
           aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
-      - name: Build Docker image
+      - name: Build and push Docker image
         env:
           ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+          TAG: ${{ env.IMAGE_TAG }}
         run: |
-          REGISTRY=${{ env.ECR_REGISTRY }}
-          REPO=${{ secrets.ECR_REPOSITORY }}
-          TAG=${{ env.IMAGE_TAG }}
-          echo "Building ${REGISTRY}/${REPO}:${TAG}"
-          docker build -t ${REGISTRY}/${REPO}:${TAG} ./backend
+          docker build -t ${ECR_REGISTRY}/${REPO}:${TAG} ./backend
+          docker push ${ECR_REGISTRY}/${REPO}:${TAG}
 
-      - name: Push image to ECR
-        env:
-          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
-        run: |
-          REGISTRY=${{ env.ECR_REGISTRY }}
-          REPO=${{ secrets.ECR_REPOSITORY }}
-          TAG=${{ env.IMAGE_TAG }}
-          docker push ${REGISTRY}/${REPO}:${TAG}
-
-      - name: Install kubectl (matching cluster)
+      - name: Install kubectl
         run: |
           set -e
-          # use cluster minor/patch that matches your EKS cluster (adjust if you upgrade)
           K8S_VERSION="v1.32.9"
-          echo "Downloading kubectl ${K8S_VERSION}"
           curl -fsSLo kubectl "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      - name: Configure kubectl for EKS (verbose)
-        # requires AWS credentials + EKS cluster name in secrets
+      - name: Configure kubectl for EKS
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}" --verbose
+        run: aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
 
-      - name: kubectl client info & context (diagnostic)
+      - name: Helm lint and render
         run: |
-          kubectl version --client --short || true
-          kubectl config view --minify || true
-          kubectl config current-context || true
-
-
-      - name: Install Helm
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Helm lint chart
-        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null
           helm lint k8s/helm/kuber-todo
-
-      - name: Render Helm templates and validate with kubectl (dry-run)
-        env:
-          KUBE_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
-        run: |
-          # use values.yaml defaults; this ensures templates render correctly
           helm template k8s/helm/kuber-todo --values k8s/helm/kuber-todo/values.yaml > /tmp/rendered.yaml
-          # Skip kubectl client-side dry-run here because it attempts API discovery
-          # and fails on runners without cluster credentials ("server has asked for the client to provide credentials").
-          # We still validate rendered manifests using kubeval in the next step.
-          echo "Skipping kubectl client-side dry-run; validating with kubeval instead"
-
-      - name: Install kubeval
-        run: |
-          set -e
-          KUBEVAL_VERSION="0.16.1"
-          echo "Installing kubeval ${KUBEVAL_VERSION}"
-          # GitHub release tags include a leading 'v' (for example v0.16.1) so include it in the download URL
-          curl -sL "https://github.com/instrumenta/kubeval/releases/download/v${KUBEVAL_VERSION}/kubeval-linux-amd64.tar.gz" | tar xz -C /tmp
-          sudo mv /tmp/kubeval /usr/local/bin/kubeval
 
       - name: Validate rendered manifests with kubeval
         run: |
-          echo "Validating /tmp/rendered.yaml with kubeval"
-          # Use a Kubernetes version that matches your cluster for schema validation. Your cluster is v1.32.x,
-          # so validate against 1.32.0. Also ignore missing remote schemas to avoid CI failure when a schema
-          # isn't available for a particular resource provider.
+          set -e
+          KUBEVAL_VERSION="0.16.1"
+          curl -sL "https://github.com/instrumenta/kubeval/releases/download/v${KUBEVAL_VERSION}/kubeval-linux-amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/kubeval /usr/local/bin/kubeval
           kubeval --strict --kubernetes-version "1.32.0" --ignore-missing-schemas /tmp/rendered.yaml
 
-      - name: Create/update MongoDB Kubernetes Secret
-        # uses GitHub secret MONGODB_ROOT_PASSWORD and optional K8S_MONGODB_SECRET_NAME
+      - name: Create/update MongoDB secret
         env:
           SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
           MONGO_PASSWORD: ${{ secrets.MONGODB_ROOT_PASSWORD }}
           K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
         run: |
-          : "Ensure K8s namespace 'kuber-todo' if not provided"
           if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
           if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
-          echo "Creating/updating secret $SECRET_NAME in namespace $K8S_NAMESPACE"
-          echo '--- kubectl auth check (pre-secret) ---'
-          kubectl config current-context || true
-          aws sts get-caller-identity || true
-          echo 'kubectl can-i create secrets? ->' $(kubectl auth can-i create secrets -n "$K8S_NAMESPACE" || true)
           if ! kubectl auth can-i create secrets -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-            echo "ERROR: current identity cannot create secrets in namespace $K8S_NAMESPACE. Dumping rendered secret YAML to artifact for manual apply."
             mkdir -p tmp
             kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml > tmp/${SECRET_NAME}.yaml || true
-            echo "Rendered secret saved to tmp/${SECRET_NAME}.yaml"
-            ls -l tmp || true
+            echo "Rendered secret saved to tmp/${SECRET_NAME}.yaml; cannot create secrets in $K8S_NAMESPACE"
             exit 1
           fi
-          # create secret with key 'root-password' to match ArgoCD helm values
           kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
-      - name: Patch ArgoCD Application with Helm value overrides
-        # Patch ArgoCD Application CR to set helm.values for secret name and image repo/tag
+      - name: Patch ArgoCD Application
         env:
           ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
           ARGO_NAMESPACE: ${{ secrets.ARGOCD_NAMESPACE }}
@@ -159,17 +95,11 @@ jobs:
           REPO: ${{ secrets.ECR_REPOSITORY }}
           TAG: ${{ env.IMAGE_TAG }}
           SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
-          K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
         run: |
           if [ -z "$ARGO_NAMESPACE" ]; then ARGO_NAMESPACE=argocd; fi
-          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
           if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
-          echo "Patching ArgoCD Application $ARGO_APP_NAME in namespace $ARGO_NAMESPACE"
-          # Build helm.values as a single string with \n newlines
           VALUES="mongodb:\n  rootPasswordSecretName: \"$SECRET_NAME\"\n  rootPasswordKey: \"root-password\"\nimage:\n  repository: \"${REGISTRY}/${REPO}\"\n  tag: \"${TAG}\""
-
           PATCH_JSON=$(printf "%b" "$VALUES" | python3 -c 'import sys,json; v=sys.stdin.read(); print(json.dumps({"spec":{"source":{"helm":{"values":v}}}}))')
-
           kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$PATCH_JSON"
 
       - name: Trigger ArgoCD sync (API then fallback)
@@ -179,31 +109,13 @@ jobs:
           ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
         run: |
           if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ] || [ -z "${ARGO_APP_NAME}" ]; then
-            echo "ARGOCD_SERVER, ARGOCD_TOKEN or ARGO_APP_NAME is not set. These are required to trigger an automated ArgoCD sync."
+            echo "ArgoCD variables missing; skipping sync"
             exit 1
           fi
-          echo "Triggering ArgoCD sync for ${ARGO_APP_NAME} via API if reachable..."
-          # Try ArgoCD REST API first (may be internal and unreachable from runner)
-          resp=$(curl -k -s -w "HTTPSTATUS:%{http_code}" -X POST \
-            -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" \
-            -d '{}' ) || true
+          resp=$(curl -k -s -w "HTTPSTATUS:%{http_code}" -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" -H "Content-Type: application/json" "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" -d '{}' ) || true
           status=$(echo "$resp" | sed -e 's/.*HTTPSTATUS://')
-          body=$(echo "$resp" | sed -e 's/HTTPSTATUS:.*//')
-
-          # If curl failed to connect or returned non-2xx, fall back to in-cluster kubectl annotation
           if [ -z "$resp" ] || [ -z "$status" ] || [ "$status" -eq 000 ] || [ "$status" -ge 400 ]; then
-            echo "ArgoCD API not reachable or returned non-2xx status ($status). Falling back to in-cluster patch via kubectl."
             kubectl -n argocd annotate application "$ARGO_APP_NAME" argocd.argoproj.io/refresh="hard" --overwrite || { echo "kubectl annotate failed"; exit 1; }
-            echo "Patched Application with refresh annotation to trigger ArgoCD reconciliation."
-          else
-            echo "ArgoCD sync API response status: $status"
-            echo "$body"
-            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-              echo "ArgoCD API returned non-2xx status: $status. Falling back to kubectl annotate."
-              kubectl -n argocd annotate application "$ARGO_APP_NAME" argocd.argoproj.io/refresh="hard" --overwrite || { echo "kubectl annotate failed"; exit 1; }
-            fi
           fi
 
   smoke-test:
@@ -214,84 +126,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials for smoke test (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Configure kubectl for EKS
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+        run: aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
 
       - name: Wait for ArgoCD Application to be Synced and Healthy
         env:
           ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
         run: |
-          if [ -z "${ARGO_APP_NAME}" ]; then echo "ARGOCD_APP_NAME must be set for smoke tests"; exit 1; fi
-          echo "Waiting up to 10 minutes for ArgoCD Application ${ARGO_APP_NAME} to be Synced and Healthy..."
+          if [ -z "${ARGO_APP_NAME}" ]; then echo "ARGOCD_APP_NAME must be set"; exit 1; fi
           timeout=$((10*60))
           interval=5
           elapsed=0
           while [ $elapsed -lt $timeout ]; do
             sync=$(kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
             health=$(kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o jsonpath='{.status.health.status}' 2>/dev/null || true)
-            echo "sync=$sync health=$health"
             if [ "$sync" = 'Synced' ] && [ "$health" = 'Healthy' ]; then
-              echo "Application is Synced and Healthy"
               break
             fi
             sleep $interval
             elapsed=$((elapsed + interval))
           done
           if [ $elapsed -ge $timeout ]; then
-            echo "Timed out waiting for ArgoCD Application to be Synced and Healthy"
             kubectl -n argocd get applications.argoproj.io ${ARGO_APP_NAME} -o yaml || true
             exit 1
           fi
 
-      - name: Discover application host (Ingress or LoadBalancer)
+      - name: Discover application host
         env:
           NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
         run: |
           if [ -z "$NAMESPACE" ]; then NAMESPACE=kuber-todo; fi
-          # Try to find an Ingress host first
           HOST=$(kubectl -n $NAMESPACE get ingress -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || true)
           if [ -z "$HOST" ]; then
-            # Try LoadBalancer hostname/IP from service
             HOST=$(kubectl -n $NAMESPACE get svc -l app.kubernetes.io/name=kuber-todo -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
           fi
           if [ -z "$HOST" ]; then
             HOST=$(kubectl -n $NAMESPACE get svc -l app.kubernetes.io/name=kuber-todo -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
           fi
-          if [ -z "$HOST" ]; then
-            echo "Could not discover an ingress host or loadBalancer address for the application in namespace $NAMESPACE"; exit 1
-          fi
+          if [ -z "$HOST" ]; then exit 1; fi
           echo "APPLICATION_HOST=$HOST" >> $GITHUB_ENV
 
       - name: Run HTTP smoke tests
         run: |
           HOST="$APPLICATION_HOST"
-          echo "Testing HTTP GET http://$HOST/api/todo"
-          # Try HTTP first, fall back to HTTPS if needed
           if curl -sSf "http://$HOST/api/todo" -o /dev/null; then
-            echo "GET /api/todo succeeded (http)"
+            exit 0
           elif curl -sSf "https://$HOST/api/todo" -o /dev/null -k; then
-            echo "GET /api/todo succeeded (https)"
+            exit 0
           else
-            echo "Smoke test failed: /api/todo not reachable at $HOST"; exit 1
+            exit 1
           fi
 
-# Required repository secrets (set these in GitHub repository settings):
-# - AWS_REGION (e.g. eu-west-1)
-# - AWS_ACCOUNT_ID (your AWS account number)
-# - EKS_CLUSTER_NAME (your EKS cluster name)
-# - ECR_REPOSITORY (e.g. my-ecr-repo/kuber-todo)
-# - K8S_NAMESPACE (optional, defaults to kuber-todo)
-# - MONGODB_ROOT_PASSWORD (used to create the in-cluster MongoDB secret)
-# Optional secrets for ArgoCD automated sync:
-# - ARGOCD_SERVER (https://argocd.example.com)
-# - ARGOCD_TOKEN (Argocd API token)
-# - ARGOCD_APP_NAME (the ArgoCD Application name to sync)

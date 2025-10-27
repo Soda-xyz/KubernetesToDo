@@ -1,0 +1,56 @@
+---
+# Role to allow CI identity to create secrets in the application namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-secrets-manager
+  namespace: kuber-todo
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch", "list"]
+
+---
+# Role binding that binds the mapped IAM user (see eksctl mapping) to the Role above.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-secrets-manager-binding
+  namespace: kuber-todo
+subjects:
+  - kind: User
+    # This username must match the --username used when creating the iamidentitymapping
+    name: "github-actions"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: ci-secrets-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for ArgoCD Application patch/annotate in the argocd namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-argocd-patcher
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "patch", "update", "list"]
+
+---
+# Bind the CI user to the ArgoCD role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-argocd-patcher-binding
+  namespace: argocd
+subjects:
+  - kind: User
+    name: "github-actions"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: ci-argocd-patcher
+  apiGroup: rbac.authorization.k8s.io

@@ -7,7 +7,7 @@ USAGE
   ./scripts/apply-aws-auth.ps1
 
   # specify your real ARN explicitly
-  ./scripts/apply-aws-auth.ps1 -IamUserArn 'arn:aws:iam::984649216408:user/Soda' -K8sUsername 'github-actions-kuber-todo' -Cluster 'wonderful-disco-ladybug' -Region 'eu-west-1'
+  ./scripts/apply-aws-auth.ps1 -IamUserArn 'arn:aws:iam::984649216408:user/Soda' -K8sUsername 'github-actions-kuber-todo' -Cluster 'final-disco-ladybug' -Region 'eu-west-1'
 
 NOTES
   - This script uses a temporary aws-auth ConfigMap entry that gives the mapped user the `system:masters` group to verify authentication. After verification, remove the broad group and rely on the Role/RoleBinding created in k8s/rbac/. The script will apply the Role and RoleBinding from the repository.
@@ -15,11 +15,11 @@ NOTES
 #>
 
 param(
-    [string]$IamUserArn = 'arn:aws:iam::984649216408:user/Soda',
-    [string]$K8sUsername = 'github-actions-kuber-todo',
-    [string]$Cluster = 'wonderful-disco-ladybug',
-    [string]$Region = 'eu-west-1',
-    [switch]$UseEksctl
+  [string]$IamUserArn = 'arn:aws:iam::984649216408:user/Soda',
+  [string]$K8sUsername = 'github-actions-kuber-todo',
+  [string]$Cluster = 'final-disco-ladybug',
+  [string]$Region = 'eu-west-1',
+  [switch]$UseEksctl
 )
 
 Write-Host "Running aws-auth apply script"
@@ -32,11 +32,11 @@ aws sts get-caller-identity | ConvertTo-Json -Depth 4
 
 Write-Host "\n--- Try to generate EKS token (aws eks get-token) ---"
 try {
-    aws eks get-token --cluster-name $Cluster --region $Region --output json | ConvertTo-Json -Depth 4
+  aws eks get-token --cluster-name $Cluster --region $Region --output json | ConvertTo-Json -Depth 4
 }
 catch {
-    Write-Error "Failed to generate token with aws eks get-token. Ensure AWS credentials allow eks:Access. Error: $_"
-    exit 2
+  Write-Error "Failed to generate token with aws eks get-token. Ensure AWS credentials allow eks:Access. Error: $_"
+  exit 2
 }
 
 Write-Host "\n--- kubeconfig current-context ---"
@@ -70,17 +70,17 @@ kubectl get nodes || true
 
 Write-Host "\n--- Applying namespace Role and RoleBinding for CI (k8s/rbac/) ---"
 if (Test-Path "k8s/rbac/ci-role.yaml") {
-    kubectl apply -f k8s/rbac/ci-role.yaml
+  kubectl apply -f k8s/rbac/ci-role.yaml
 }
 else {
-    Write-Warning "k8s/rbac/ci-role.yaml not found in repo"
+  Write-Warning "k8s/rbac/ci-role.yaml not found in repo"
 }
 
 if (Test-Path "k8s/rbac/ci-rolebinding.yaml") {
-    kubectl apply -f k8s/rbac/ci-rolebinding.yaml
+  kubectl apply -f k8s/rbac/ci-rolebinding.yaml
 }
 else {
-    Write-Warning "k8s/rbac/ci-rolebinding.yaml not found in repo"
+  Write-Warning "k8s/rbac/ci-rolebinding.yaml not found in repo"
 }
 
 Write-Host "\nIf the above kubectl calls succeeded, the CI identity can authenticate. Remember to remove 'system:masters' in aws-auth and rely on the Role/RoleBinding for least privilege."

@@ -13,8 +13,9 @@ jobs:
       - name: Configure AWS credentials from OIDC
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
-          aws-region: eu-west-1
+          # Use the repository secret created from the deployment guide
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Verify AWS identity
         run: |
@@ -22,7 +23,7 @@ jobs:
           aws sts get-caller-identity
 
       - name: Describe EKS cluster
-        run: aws eks describe-cluster --name notgreat-disco-ladybug --region eu-west-1 --output yaml
+        run: aws eks describe-cluster --name final-disco-ladybug --region eu-west-1 --output yaml
 
       - name: Install kubectl (matching cluster)
         run: |
@@ -34,7 +35,7 @@ jobs:
           sudo mv kubectl /usr/local/bin/
 
       - name: Update kubeconfig (verbose)
-        run: aws eks update-kubeconfig --name notgreat-disco-ladybug --region eu-west-1 --verbose
+        run: aws eks update-kubeconfig --name final-disco-ladybug --region eu-west-1 --verbose
 
       - name: kubectl client info & context
         run: |

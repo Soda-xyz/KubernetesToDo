@@ -5,8 +5,7 @@ metadata:
   name: {{ include "kuber-todo.fullname" . }}-mongodb
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "kuber-todo.name" . }}
-    component: mongodb
+{{ include "kuber-todo.labels" (dict "root" . "component" "mongodb" "version" .Values.mongodb.image.tag) | nindent 4 }}
 spec:
   serviceName: {{ include "kuber-todo.fullname" . }}-mongodb-headless
   replicas: {{ .Values.mongodb.replicaCount }}
@@ -17,8 +16,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ include "kuber-todo.name" . }}
-        component: mongodb
+{{ include "kuber-todo.labels" (dict "root" . "component" "mongodb" "version" .Values.mongodb.image.tag) | nindent 8 }}
     spec:
       {{- if .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -70,6 +68,14 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: mongo-data
+        labels:
+          app: {{ include "kuber-todo.name" . }}
+          app.kubernetes.io/name: {{ include "kuber-todo.name" . }}
+          app.kubernetes.io/instance: {{ .Release.Name }}
+          app.kubernetes.io/version: "{{ .Values.mongodb.image.tag }}"
+          app.kubernetes.io/component: mongodb
+          app.kubernetes.io/managed-by: Helm
+          helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
       spec:
         accessModes: [ "ReadWriteOnce" ]
         resources:
