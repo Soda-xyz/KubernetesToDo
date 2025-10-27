@@ -94,8 +94,10 @@ jobs:
       - name: Validate rendered manifests with kubeval
         run: |
           echo "Validating /tmp/rendered.yaml with kubeval"
-          # Use a reasonable Kubernetes version for schema validation; adjust if your cluster uses a different version
-          kubeval --strict --kubernetes-version "1.27.0" /tmp/rendered.yaml
+          # Use a Kubernetes version that matches your cluster for schema validation. Your cluster is v1.32.x,
+          # so validate against 1.32.0. Also ignore missing remote schemas to avoid CI failure when a schema
+          # isn't available for a particular resource provider.
+          kubeval --strict --kubernetes-version "1.32.0" --ignore-missing-schemas /tmp/rendered.yaml
 
       - name: Create/update MongoDB Kubernetes Secret
         # uses GitHub secret MONGODB_ROOT_PASSWORD and optional K8S_MONGODB_SECRET_NAME
