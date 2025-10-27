@@ -5,6 +5,7 @@ on:
     branches: [ main ]
 
 permissions:
+  id-token: write
   contents: read
   packages: write
 
@@ -20,11 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Verify AWS identity (diagnostic)
@@ -206,11 +206,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials for smoke test
+      - name: Configure AWS credentials for smoke test (OIDC)
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Configure kubectl for EKS
@@ -278,11 +277,12 @@ jobs:
           fi
 
 # Required repository secrets (set these in GitHub repository settings):
-# - AWS_ACCESS_KEY_ID
-# - AWS_SECRET_ACCESS_KEY
-# - AWS_REGION (e.g. us-east-1)
+# - AWS_REGION (e.g. eu-west-1)
 # - AWS_ACCOUNT_ID (your AWS account number)
+# - EKS_CLUSTER_NAME (your EKS cluster name)
 # - ECR_REPOSITORY (e.g. my-ecr-repo/kuber-todo)
+# - K8S_NAMESPACE (optional, defaults to kuber-todo)
+# - MONGODB_ROOT_PASSWORD (used to create the in-cluster MongoDB secret)
 # Optional secrets for ArgoCD automated sync:
 # - ARGOCD_SERVER (https://argocd.example.com)
 # - ARGOCD_TOKEN (Argocd API token)
