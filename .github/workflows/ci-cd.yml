@@ -62,23 +62,6 @@ jobs:
         run: |
           aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
 
-      - name: Debug AWS identity & kubeconfig
-        # Quick checks to verify the job's AWS identity and kubeconfig are correct
-        run: |
-          echo "AWS caller identity:"
-          aws sts get-caller-identity || true
-
-          echo "--- kubeconfig current-context ---"
-          kubectl config current-context || true
-
-          echo "--- kubectl cluster-info ---"
-          kubectl cluster-info || true
-
-          echo "--- can the current identity create secrets in target ns? ---"
-          kubectl auth can-i create secrets -n "${{ secrets.K8S_NAMESPACE }}" || kubectl auth can-i create secrets -n "kuber-todo" || true
-
-          echo "--- try listing nodes (connectivity + auth) ---"
-          kubectl get nodes || true
 
       - name: Install Helm
         run: |
@@ -94,8 +77,11 @@ jobs:
         run: |
           # use values.yaml defaults; this ensures templates render correctly
           helm template k8s/helm/kuber-todo --values k8s/helm/kuber-todo/values.yaml > /tmp/rendered.yaml
-          # kubectl apply --dry-run requires a kubeconfig (we configured earlier). This validates against client-side schema and templating issues.
-          kubectl apply --dry-run=client -f /tmp/rendered.yaml
+          # kubectl client-side validation may attempt to download OpenAPI from the cluster
+          # which fails if the runner has no cluster credentials. Skip schema validation here
+          # (we still validate with kubeval below). If you prefer server validation, ensure
+          # the runner has a working kubeconfig and permissions to access the OpenAPI endpoint.
+          kubectl apply --dry-run=client --validate=false -f /tmp/rendered.yaml
 
       - name: Install kubeval
         run: |
