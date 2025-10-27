@@ -27,6 +27,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Verify AWS identity (diagnostic)
+        run: |
+          echo '--- AWS caller identity ---'
+          aws sts get-caller-identity
+
+      - name: Describe EKS cluster (diagnostic)
+        run: |
+          aws eks describe-cluster --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}" --output yaml || true
+
       - name: Login to Amazon ECR
         env:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
@@ -55,12 +64,28 @@ jobs:
           TAG=${{ env.IMAGE_TAG }}
           docker push ${REGISTRY}/${REPO}:${TAG}
 
-      - name: Configure kubectl for EKS
+      - name: Install kubectl (matching cluster)
+        run: |
+          set -e
+          # use cluster minor/patch that matches your EKS cluster (adjust if you upgrade)
+          K8S_VERSION="v1.32.9"
+          echo "Downloading kubectl ${K8S_VERSION}"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Configure kubectl for EKS (verbose)
         # requires AWS credentials + EKS cluster name in secrets
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}" --verbose
+
+      - name: kubectl client info & context (diagnostic)
+        run: |
+          kubectl version --client --short || true
+          kubectl config view --minify || true
+          kubectl config current-context || true
 
 
       - name: Install Helm
@@ -110,6 +135,18 @@ jobs:
           if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
           if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
           echo "Creating/updating secret $SECRET_NAME in namespace $K8S_NAMESPACE"
+          echo '--- kubectl auth check (pre-secret) ---'
+          kubectl config current-context || true
+          aws sts get-caller-identity || true
+          echo 'kubectl can-i create secrets? ->' $(kubectl auth can-i create secrets -n "$K8S_NAMESPACE" || true)
+          if ! kubectl auth can-i create secrets -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
+            echo "ERROR: current identity cannot create secrets in namespace $K8S_NAMESPACE. Dumping rendered secret YAML to artifact for manual apply."
+            mkdir -p tmp
+            kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml > tmp/${SECRET_NAME}.yaml || true
+            echo "Rendered secret saved to tmp/${SECRET_NAME}.yaml"
+            ls -l tmp || true
+            exit 1
+          fi
           # create secret with key 'root-password' to match ArgoCD helm values
           kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
