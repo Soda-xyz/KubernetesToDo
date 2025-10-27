@@ -77,11 +77,10 @@ jobs:
         run: |
           # use values.yaml defaults; this ensures templates render correctly
           helm template k8s/helm/kuber-todo --values k8s/helm/kuber-todo/values.yaml > /tmp/rendered.yaml
-          # kubectl client-side validation may attempt to download OpenAPI from the cluster
-          # which fails if the runner has no cluster credentials. Skip schema validation here
-          # (we still validate with kubeval below). If you prefer server validation, ensure
-          # the runner has a working kubeconfig and permissions to access the OpenAPI endpoint.
-          kubectl apply --dry-run=client --validate=false -f /tmp/rendered.yaml
+          # Skip kubectl client-side dry-run here because it attempts API discovery
+          # and fails on runners without cluster credentials ("server has asked for the client to provide credentials").
+          # We still validate rendered manifests using kubeval in the next step.
+          echo "Skipping kubectl client-side dry-run; validating with kubeval instead"
 
       - name: Install kubeval
         run: |
