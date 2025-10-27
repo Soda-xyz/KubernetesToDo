@@ -33,18 +33,18 @@ spec:
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
               value: "{{ .Values.mongodb.rootUsername }}"
-              {{- if .Values.mongodb.rootPasswordSecretName }}
-              - name: MONGO_INITDB_ROOT_PASSWORD
-                valueFrom:
-                  secretKeyRef:
-                    name: "{{ .Values.mongodb.rootPasswordSecretName }}"
-                    key: "{{ .Values.mongodb.rootPasswordKey }}"
-              {{- else if .Values.mongodb.rootPassword }}
-              - name: MONGO_INITDB_ROOT_PASSWORD
-                value: "{{ .Values.mongodb.rootPassword }}"
-              {{- else }}
-              # No MongoDB root password provided via secret or value.
-              {{- end }}
+{{- if .Values.mongodb.rootPasswordSecretName }}
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.mongodb.rootPasswordSecretName }}"
+                  key: "{{ .Values.mongodb.rootPasswordKey }}"
+{{- else if .Values.mongodb.rootPassword }}
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              value: "{{ .Values.mongodb.rootPassword }}"
+{{- else }}
+            # No MongoDB root password provided via secret or value.
+{{- end }}
             - name: MONGO_INITDB_DATABASE
               value: "{{ .Values.mongodb.database }}"
           volumeMounts:
