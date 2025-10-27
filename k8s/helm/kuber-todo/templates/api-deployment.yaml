@@ -47,7 +47,7 @@ spec:
             timeoutSeconds: {{ .Values.probes.api.liveness.timeoutSeconds }}
           {{- end }}
           {{- if .Values.probes.api.readiness.enabled }}
-          readinessProbe:
+            readinessProbe:
             httpGet:
               path: {{ .Values.probes.api.readiness.path | quote }}
               port: {{ .Values.service.port }}

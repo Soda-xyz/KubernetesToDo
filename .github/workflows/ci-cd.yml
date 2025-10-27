@@ -96,6 +96,30 @@ jobs:
         run: |
           helm lint k8s/helm/kuber-todo
 
+      - name: Sanity-check rendered templates for missing namespace (prevent ArgoCD InvalidSpecError)
+        run: |
+          set -euo pipefail
+          echo "Rendering chart to /tmp/rendered.yaml"
+          helm template k8s/helm/kuber-todo --namespace kuber-todo --values k8s/helm/kuber-todo/values.yaml > /tmp/rendered.yaml
+          echo "Checking for accidental markdown fences in templates"
+          if grep -R "```" k8s/helm/kuber-todo/templates >/dev/null 2>&1; then
+            echo "Found markdown fences in templates; remove them."; exit 1
+          fi
+          echo "Scanning rendered manifests for namespace-less namespace-scoped resources"
+          # For each occurrence of kind: Service|Deployment|StatefulSet|Ingress, ensure a 'namespace:' appears in the preceding 8 lines
+          awk '
+            { buf[NR]=$0 }
+            /^(kind: )[SDI][^ ]*/ {
+              if ($0 ~ /kind: (Service|Deployment|StatefulSet|Ingress)/) {
+                kline=NR
+                found=0
+                for(i=kline-8;i<kline;i++) if(i>0 && buf[i] ~ /namespace:/) found=1
+                if(!found){ print "Missing namespace for resource at line " kline ": " $0; err=1 }
+              }
+            }
+            END { if (err) exit 1 }
+          ' /tmp/rendered.yaml || (echo "Rendered manifest missing namespace for a scoped resource"; exit 1)
+
       - name: Render Helm templates and validate with kubectl (dry-run)
         env:
           KUBE_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
