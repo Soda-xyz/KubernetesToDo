@@ -34,10 +34,7 @@ param(
     [string]$GroupName = 'github-actions-group',
 
     [Parameter(Mandatory = $false)]
-    [string]$Username = 'github-actions-ci',
-
-    [switch]$Apply,
-    [switch]$Yes
+    [string]$Username = 'github-actions-ci'
 )
 
 function Test-Tool {
@@ -52,7 +49,7 @@ function Test-Tool {
     }
 }
 
-Write-Host "Starting create-ci-role.ps1 (dry-run unless -Apply provided)"
+Write-Host "Starting create-ci-role.ps1"
 
 # Prereq checks
 $missing = @()
@@ -88,22 +85,7 @@ $roleArn = "arn:aws:iam::${AwsAccountId}:role/$RoleName"
 
 $ciPolicyPath = Join-Path $PSScriptRoot '..\iam\ci-role-policy.json' -Resolve
 
-Write-Host "----- DRY RUN: The following actions will be performed if you run with -Apply -----"
-Write-Host "1) Ensure IAM role exists: $RoleName"
-Write-Host "2) Attach inline policy: $ciPolicyPath"
-Write-Host "3) Create eks identity mapping for cluster: $ClusterName"
-Write-Host "4) Apply Kubernetes RBAC manifests (ci-role/rolebinding)"
-Write-Host "--------------------------------------------------------------------------"
-
-if (-not $Apply) {
-    Write-Host "Dry-run mode: no changes will be applied. Rerun with -Apply -Yes to execute the actions."
-    exit 0
-}
-
-if (-not $Yes) {
-    $confirm = Read-Host "Are you sure you want to apply these changes? Type 'yes' to continue"
-    if ($confirm -ne 'yes') { Write-Host 'Aborting.'; exit 0 }
-}
+Write-Host "Planned actions: ensure IAM role exists, attach inline policy, create eks identity mapping, and apply namespace RBAC."
 
 ## 1) Ensure IAM role exists (create if missing)
 Write-Host "Checking for existing role: $RoleName"
@@ -130,25 +112,17 @@ if (-not (Test-Path $ciPolicyPath)) {
 if ($LASTEXITCODE -ne 0) { Write-Warning "eksctl create iamidentitymapping may have failed or mapping already exists" }
 
 ## 4) Apply Kubernetes RBAC
-Write-Host "Applying Kubernetes RBAC manifests"
+## Ensure target namespace exists
+$ns = 'kuber-todo'
+Write-Host "Ensuring namespace $ns exists"
+kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+
+# Apply RBAC manifests
 & kubectl apply -f (Join-Path $PSScriptRoot '..\k8s\rbac\ci-role.yaml' -Resolve)
 if ($LASTEXITCODE -ne 0) { Write-Warning "kubectl apply ci-role.yaml failed" }
 & kubectl apply -f (Join-Path $PSScriptRoot '..\k8s\rbac\ci-rolebinding.yaml' -Resolve)
 if ($LASTEXITCODE -ne 0) { Write-Warning "kubectl apply ci-rolebinding.yaml failed" }
 
-# Write an audit file
-$audit = @{
-    roleArn      = $roleArn
-    appliedAt    = (Get-Date).ToString('u')
-    awsAccountId = $AwsAccountId
-    cluster      = $ClusterName
-    group        = $GroupName
-    username     = $Username
-}
-$auditPath = Join-Path $PSScriptRoot '..\localfiles\ci-role-created.json' -Resolve
-$audit | ConvertTo-Json | Set-Content -Path $auditPath -Encoding utf8
-Write-Host "Applied. Audit written to $auditPath"
-
-Write-Host "Recommended verification commands:"
+Write-Host "Done. Recommended verification commands:"
 Write-Host "  aws sts get-caller-identity"
 Write-Host "  kubectl auth can-i create secrets -n kuber-todo"
