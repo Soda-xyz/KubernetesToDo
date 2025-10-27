@@ -3,21 +3,25 @@
 {{- end -}}
 
 {{- /*
-Common labels helper. Use by calling:
+Common labels helper.
+Usage:
 	{{ include "kuber-todo.labels" (dict "root" . "component" "api" "version" .Values.image.tag) | nindent 4 }}
-The helper expects a dict with keys:
+
+The helper accepts a dict with keys:
 	root: the original context (usually .)
-	component: string (eg. "api", "mongodb", "ingress")
-	version: string value for app.kubernetes.io/version
+	component: string (eg. "api", "mongodb", "ingress") — optional, defaults to "app"
+	version: string for app.kubernetes.io/version — optional, defaults to Chart.AppVersion when available
 */ -}}
 {{- define "kuber-todo.labels" -}}
 {{- $root := .root -}}
+{{- $component := default "app" .component -}}
+{{- $version := default $root.Chart.AppVersion .version -}}
 {{- $labels := dict
 		"app" (include "kuber-todo.name" $root)
 		"app.kubernetes.io/name" (include "kuber-todo.name" $root)
 		"app.kubernetes.io/instance" $root.Release.Name
-		"app.kubernetes.io/version" .version
-		"app.kubernetes.io/component" .component
+		"app.kubernetes.io/version" $version
+		"app.kubernetes.io/component" $component
 		"app.kubernetes.io/managed-by" "Helm"
 		"helm.sh/chart" (printf "%s-%s" $root.Chart.Name $root.Chart.Version)
 	-}}
