@@ -19,6 +19,8 @@ spec:
         mongodb:
           rootPasswordSecretName: kuber-todo-mongodb-root
           rootPasswordKey: root-password
+          persistence:
+            storageClass: gp2
         imagePullSecrets:
           - name: ecr-registry
   destination:
