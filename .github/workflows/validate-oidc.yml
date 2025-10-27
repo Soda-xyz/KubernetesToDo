@@ -1,0 +1,31 @@
+name: Validate OIDC -> IAM -> Kubernetes RBAC
+on:
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate-oidc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials from OIDC
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
+          aws-region: eu-west-1
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: '1.27.0'
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name notgreat-disco-ladybug --region eu-west-1
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Verify RBAC can create MongoDB secret
+        run: kubectl auth can-i create secrets -n kuber-todo
