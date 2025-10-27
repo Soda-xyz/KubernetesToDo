@@ -2,10 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "kuber-todo.fullname" . }}-api
-    namespace: {{ .Release.Namespace }}
-    labels:
-      app: {{ include "kuber-todo.name" . }}
-      component: api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ include "kuber-todo.name" . }}
+    component: api
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -47,7 +47,7 @@ spec:
             timeoutSeconds: {{ .Values.probes.api.liveness.timeoutSeconds }}
           {{- end }}
           {{- if .Values.probes.api.readiness.enabled }}
-            readinessProbe:
+          readinessProbe:
             httpGet:
               path: {{ .Values.probes.api.readiness.path | quote }}
               port: {{ .Values.service.port }}

@@ -3,13 +3,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: {{ include "kuber-todo.fullname" . }}-mongodb
+  namespace: {{ .Release.Namespace }}
   labels:
     app: {{ include "kuber-todo.name" . }}
     component: mongodb
 spec:
   serviceName: {{ include "kuber-todo.fullname" . }}-mongodb-headless
   replicas: {{ .Values.mongodb.replicaCount }}
-      namespace: {{ .Release.Namespace }}
   selector:
     matchLabels:
       app: {{ include "kuber-todo.name" . }}
