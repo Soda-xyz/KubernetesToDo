@@ -12,13 +12,16 @@ The helper expects a dict with keys:
 */ -}}
 {{- define "kuber-todo.labels" -}}
 {{- $root := .root -}}
-app: {{ include "kuber-todo.name" $root }}
-app.kubernetes.io/name: {{ include "kuber-todo.name" $root }}
-app.kubernetes.io/instance: {{ $root.Release.Name }}
-app.kubernetes.io/version: "{{ .version }}"
-app.kubernetes.io/component: {{ .component }}
-app.kubernetes.io/managed-by: Helm
-helm.sh/chart: "{{ $root.Chart.Name }}-{{ $root.Chart.Version }}"
+{{- $labels := dict
+		"app" (include "kuber-todo.name" $root)
+		"app.kubernetes.io/name" (include "kuber-todo.name" $root)
+		"app.kubernetes.io/instance" $root.Release.Name
+		"app.kubernetes.io/version" .version
+		"app.kubernetes.io/component" .component
+		"app.kubernetes.io/managed-by" "Helm"
+		"helm.sh/chart" (printf "%s-%s" $root.Chart.Name $root.Chart.Version)
+	-}}
+{{ toYaml $labels | nindent 0 }}
 {{- end -}}
 
 
