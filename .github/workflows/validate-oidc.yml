@@ -16,16 +16,31 @@ jobs:
           role-to-assume: arn:aws:iam::984649216408:role/github-actions-kuber-role
           aws-region: eu-west-1
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: '1.27.0'
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name notgreat-disco-ladybug --region eu-west-1
-
       - name: Verify AWS identity
-        run: aws sts get-caller-identity
+        run: |
+          echo '--- caller identity ---'
+          aws sts get-caller-identity
 
-      - name: Verify RBAC can create MongoDB secret
+      - name: Describe EKS cluster
+        run: aws eks describe-cluster --name notgreat-disco-ladybug --region eu-west-1 --output yaml
+
+      - name: Install kubectl (matching cluster)
+        run: |
+          set -e
+          K8S_VERSION="v1.32.9"
+          echo "Downloading kubectl ${K8S_VERSION}"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Update kubeconfig (verbose)
+        run: aws eks update-kubeconfig --name notgreat-disco-ladybug --region eu-west-1 --verbose
+
+      - name: kubectl client info & context
+        run: |
+          kubectl version --client --short || true
+          kubectl config view --minify
+          kubectl config current-context || true
+
+      - name: Verify RBAC can create secret
         run: kubectl auth can-i create secrets -n kuber-todo
