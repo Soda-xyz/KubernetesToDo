@@ -11,26 +11,18 @@ spec:
     path: k8s/helm/kuber-todo
     helm:
       values: |-
-        # The CI workflow will patch these values with the built image registry and tag.
-        # Replace <REPLACE_WITH_ECR_REGISTRY_OR_URI> with your registry or let CI patch this at runtime.
         image:
-          repository: "<REPLACE_WITH_ECR_REGISTRY_OR_URI>/kuber-todo"
+          repository: "984649216408.dkr.ecr.eu-west-1.amazonaws.com/kuber-todo"
           tag: "latest"
         ingress:
           host: "todo.example.com"
         mongodb:
-          # Use a Kubernetes Secret instead of embedding a plaintext password here.
-          # CI will create or ensure a Secret named 'kuber-todo-mongodb-root' with key 'root-password'.
           rootPasswordSecretName: kuber-todo-mongodb-root
           rootPasswordKey: root-password
-        # If your image registry is private (ECR), either enable node-side ECR credentials / IRSA
-        # or set `imagePullSecrets` to the name of a secret that contains the registry credentials.
-        # The CI job in this repo patches the application with the real image repo/tag after pushing.
         imagePullSecrets:
           - name: ecr-registry
   destination:
     server: "https://kubernetes.default.svc"
-  namespace: kuber-todo
   syncPolicy:
     automated:
       prune: true

@@ -17,9 +17,3 @@
   ]
 }
 
-/*
-  Usage:
-  - Replace ${AWS_ACCOUNT_ID}, ${GITHUB_OWNER}, ${GITHUB_REPO}, ${GITHUB_BRANCH} with your values.
-  - Create the role in AWS IAM and attach the policy in `ci-role-policy.json`.
-  - This trust policy restricts the role to be assumable only by GitHub Actions runs from the specified repo and branch.
-*/
