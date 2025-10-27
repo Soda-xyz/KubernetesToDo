@@ -9,6 +9,7 @@ metadata:
 spec:
   serviceName: {{ include "kuber-todo.fullname" . }}-mongodb-headless
   replicas: {{ .Values.mongodb.replicaCount }}
+      namespace: {{ .Release.Namespace }}
   selector:
     matchLabels:
       app: {{ include "kuber-todo.name" . }}

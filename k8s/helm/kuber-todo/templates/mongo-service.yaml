@@ -10,25 +10,39 @@ spec:
   ports:
     - port: {{ .Values.mongodb.service.port }}
       targetPort: {{ .Values.mongodb.service.port }}
-      name: mongodb
-  selector:
-    app: {{ include "kuber-todo.name" . }}
-    component: mongodb
----
-# Headless service for StatefulSet DNS
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "kuber-todo.fullname" . }}-mongodb-headless
-  labels:
-    app: {{ include "kuber-todo.name" . }}
-spec:
-  clusterIP: None
-  ports:
-    - port: {{ .Values.mongodb.service.port }}
-      targetPort: {{ .Values.mongodb.service.port }}
-      name: mongodb
-  selector:
-    app: {{ include "kuber-todo.name" . }}
-    component: mongodb
-{{- end }}
+      {{- if .Values.mongodb.enabled }}
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ include "kuber-todo.fullname" . }}-mongodb
+        namespace: {{ .Release.Namespace }}
+        labels:
+          app: {{ include "kuber-todo.name" . }}
+      spec:
+        type: ClusterIP
+        ports:
+          - port: {{ .Values.mongodb.service.port }}
+            targetPort: {{ .Values.mongodb.service.port }}
+            name: mongodb
+        selector:
+          app: {{ include "kuber-todo.name" . }}
+          component: mongodb
+      ---
+      # Headless service for StatefulSet DNS
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ include "kuber-todo.fullname" . }}-mongodb-headless
+        namespace: {{ .Release.Namespace }}
+        labels:
+          app: {{ include "kuber-todo.name" . }}
+      spec:
+        clusterIP: None
+        ports:
+          - port: {{ .Values.mongodb.service.port }}
+            targetPort: {{ .Values.mongodb.service.port }}
+            name: mongodb
+        selector:
+          app: {{ include "kuber-todo.name" . }}
+          component: mongodb
+      {{- end }}
