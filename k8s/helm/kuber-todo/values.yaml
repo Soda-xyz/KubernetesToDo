@@ -37,6 +37,11 @@ mongodb:
     enabled: true
     size: 1Gi
     storageClass: ""
+    # Persistence type controls how MongoDB stores data:
+    # - "pvc" (default): use PersistentVolumeClaim from volumeClaimTemplates
+    # - "emptyDir": use ephemeral node-local storage (useful for local/dev clusters)
+    # You can override this from ArgoCD or helm with: --set mongodb.persistence.type=emptyDir
+    type: pvc
 
 resources: {}
 

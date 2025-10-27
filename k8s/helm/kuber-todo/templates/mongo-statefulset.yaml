@@ -65,6 +65,13 @@ spec:
             periodSeconds: {{ .Values.probes.mongodb.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.mongodb.readiness.failureThreshold }}
           {{- end }}
+  {{- if eq .Values.mongodb.persistence.type "emptyDir" }}
+      volumes:
+        - name: mongo-data
+          emptyDir: {}
+  {{- end }}
+
+  {{- if or (not (hasKey .Values.mongodb.persistence "type")) (eq .Values.mongodb.persistence.type "pvc") }}
   volumeClaimTemplates:
     - metadata:
         name: mongo-data
@@ -84,4 +91,8 @@ spec:
         {{- if .Values.mongodb.persistence.storageClass }}
         storageClassName: "{{ .Values.mongodb.persistence.storageClass }}"
         {{- end }}
+  {{- else if eq .Values.mongodb.persistence.type "emptyDir" }}
+  # Use emptyDir as a development convenience: ephemeral per-node storage
+  {{- end }}
+
 {{- end }}

@@ -21,6 +21,7 @@ spec:
           rootPasswordKey: root-password
           persistence:
             storageClass: gp2
+            type: emptyDir
         imagePullSecrets:
           - name: ecr-registry
   destination:
