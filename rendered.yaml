@@ -135,7 +135,7 @@ spec:
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
               value: "root"
-              # No MongoDB root password provided via secret or value.
+            # No MongoDB root password provided via secret or value.
             - name: MONGO_INITDB_DATABASE
               value: "kuber_todo_db"
           volumeMounts:
