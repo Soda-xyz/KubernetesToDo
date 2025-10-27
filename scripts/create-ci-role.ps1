@@ -30,6 +30,12 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ClusterName,
 
+    [Parameter(Mandatory = $false)]
+    [string]$GroupName = 'github-actions-group',
+
+    [Parameter(Mandatory = $false)]
+    [string]$Username = 'github-actions-ci',
+
     [switch]$Apply,
     [switch]$Yes
 )
@@ -69,9 +75,11 @@ $tpl = Get-Content $tplPath -Raw
 $tpl = $tpl -replace '\$\{AWS_ACCOUNT_ID\}', $AwsAccountId
 $tpl = $tpl -replace '\$\{GITHUB_OWNER\}', $GithubOwner
 $tpl = $tpl -replace '\$\{GITHUB_REPO\}', $GithubRepo
-$tpl = $tpl -replace '\$\{GITHUB_BRANCH\}', $GithubBranch
+# Normalize branch input: accept either 'main' or 'refs/heads/main'
+$branchClean = $GithubBranch -replace '^refs/heads/', ''
+$tpl = $tpl -replace '\$\{GITHUB_BRANCH\}', $branchClean
 
-$outTrustPath = Join-Path $PSScriptRoot '..\iam\github-oidc-trust-policy.json' -Resolve
+$outTrustPath = Join-Path $PSScriptRoot '..\iam\github-oidc-trust-policy.json'
 Write-Host "Writing expanded trust policy to: $outTrustPath"
 Set-Content -Path $outTrustPath -Value $tpl -Encoding utf8
 
@@ -113,8 +121,12 @@ Write-Host "Attaching inline policy to $RoleName from $ciPolicyPath"
 if ($LASTEXITCODE -ne 0) { Write-Warning "Failed to attach inline policy to $RoleName" }
 
 ## 3) Create eks identity mapping
-Write-Host "Creating IAM identity mapping in cluster $ClusterName (eksctl)"
-& eksctl create iamidentitymapping --cluster $ClusterName --region $Region --arn $roleArn --username github-actions-kuber-todo --group system:masters
+Write-Host "Creating IAM identity mapping in cluster $ClusterName (eksctl) -> group: $GroupName username: $Username"
+if (-not (Test-Path $ciPolicyPath)) {
+    Write-Error "CI policy file not found at $ciPolicyPath. Aborting."
+    exit 4
+}
+& eksctl create iamidentitymapping --cluster $ClusterName --region $Region --arn $roleArn --username $Username --group $GroupName
 if ($LASTEXITCODE -ne 0) { Write-Warning "eksctl create iamidentitymapping may have failed or mapping already exists" }
 
 ## 4) Apply Kubernetes RBAC
@@ -130,6 +142,8 @@ $audit = @{
     appliedAt    = (Get-Date).ToString('u')
     awsAccountId = $AwsAccountId
     cluster      = $ClusterName
+    group        = $GroupName
+    username     = $Username
 }
 $auditPath = Join-Path $PSScriptRoot '..\localfiles\ci-role-created.json' -Resolve
 $audit | ConvertTo-Json | Set-Content -Path $auditPath -Encoding utf8
