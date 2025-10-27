@@ -12,7 +12,7 @@ spec:
   selector:
     matchLabels:
       app: {{ include "kuber-todo.name" . }}
-      component: mongodb
+      app.kubernetes.io/component: mongodb
   template:
     metadata:
       labels:
