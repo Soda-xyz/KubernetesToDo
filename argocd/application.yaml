@@ -25,6 +25,11 @@ spec:
           persistence:
             storageClass: gp2
             type: emptyDir
+        probes:
+          api:
+            readiness:
+              initialDelaySeconds: 15
+              timeoutSeconds: 10
         # imagePullSecrets removed — registry is public or managed separately
   destination:
     server: "https://kubernetes.default.svc"
