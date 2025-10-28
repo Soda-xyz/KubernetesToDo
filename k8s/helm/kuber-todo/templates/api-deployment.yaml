@@ -29,8 +29,18 @@ spec:
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:{{ .Values.service.port }}"
+            {{- if .Values.mongodb.rootPasswordSecretName }}
+            - name: Mongo__Password
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.mongodb.rootPasswordSecretName }}"
+                  key: "{{ .Values.mongodb.rootPasswordKey }}"
+            {{- else if .Values.mongodb.rootPassword }}
+            - name: Mongo__Password
+              value: "{{ .Values.mongodb.rootPassword }}"
+            {{- end }}
             - name: Mongo__ConnectionString
-              value: "mongodb://{{ include "kuber-todo.fullname" . }}-mongodb:{{ .Values.mongodb.service.port }}"
+              value: "mongodb://{{ .Values.mongodb.rootUsername }}:$(Mongo__Password)@{{ include \"kuber-todo.fullname\" . }}-mongodb:{{ .Values.mongodb.service.port }}/?authSource=admin"
             - name: Mongo__Database
               value: "{{ .Values.mongodb.database }}"
           resources: {{ toYaml .Values.resources | nindent 12 }}
