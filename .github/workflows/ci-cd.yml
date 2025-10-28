@@ -94,14 +94,20 @@ jobs:
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
           ARGO_APP_NAME: ${{ env.ARGO_APP_NAME }}
         run: |
-          if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ] || [ -z "${ARGO_APP_NAME}" ]; then
-            echo "ArgoCD variables missing; skipping sync"
-            exit 1
-          fi
-          resp=$(curl -k -s -w "HTTPSTATUS:%{http_code}" -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" -H "Content-Type: application/json" "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" -d '{}' ) || true
-          status=$(echo "$resp" | sed -e 's/.*HTTPSTATUS://')
-          if [ -z "$resp" ] || [ -z "$status" ] || [ "$status" -eq 000 ] || [ "$status" -ge 400 ]; then
-            kubectl -n argocd annotate application "$ARGO_APP_NAME" argocd.argoproj.io/refresh="hard" --overwrite || { echo "kubectl annotate failed"; exit 1; }
+          # Prefer ArgoCD API sync when credentials are provided; otherwise fall back to kubectl annotation.
+          if [ -n "${ARGOCD_SERVER}" ] && [ -n "${ARGOCD_TOKEN}" ] && [ -n "${ARGO_APP_NAME}" ]; then
+            echo "Attempting ArgoCD API sync"
+            resp=$(curl -k -s -w "HTTPSTATUS:%{http_code}" -X POST -H "Authorization: Bearer ${ARGOCD_TOKEN}" -H "Content-Type: application/json" "${ARGOCD_SERVER}/api/v1/applications/${ARGO_APP_NAME}/sync" -d '{}' ) || true
+            status=$(echo "$resp" | sed -e 's/.*HTTPSTATUS://')
+            if [ -n "$resp" ] && [ -n "$status" ] && [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+              echo "ArgoCD API sync requested (status: $status)"
+            else
+              echo "ArgoCD API sync missing/failed (status: ${status:-none}), falling back to kubectl annotate"
+              kubectl -n argocd annotate application "${ARGO_APP_NAME}" argocd.argoproj.io/refresh="hard" --overwrite || { echo "kubectl annotate failed"; exit 1; }
+            fi
+          else
+            echo "ArgoCD API credentials not provided; falling back to kubectl annotate"
+            kubectl -n argocd annotate application "${ARGO_APP_NAME}" argocd.argoproj.io/refresh="hard" --overwrite || { echo "kubectl annotate failed"; exit 1; }
           fi
 
   smoke-test:
