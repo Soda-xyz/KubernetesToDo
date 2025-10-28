@@ -40,7 +40,7 @@ spec:
               value: "{{ .Values.mongodb.rootPassword }}"
             {{- end }}
             - name: Mongo__ConnectionString
-              value: "mongodb://{{ .Values.mongodb.rootUsername }}:$(Mongo__Password)@{{ include \"kuber-todo.fullname\" . }}-mongodb:{{ .Values.mongodb.service.port }}/?authSource=admin"
+              value: {{ printf "mongodb://%s:$(Mongo__Password)@%s:%v/?authSource=admin" .Values.mongodb.rootUsername (include "kuber-todo.fullname" .) .Values.mongodb.service.port | quote }}
             - name: Mongo__Database
               value: "{{ .Values.mongodb.database }}"
           resources: {{ toYaml .Values.resources | nindent 12 }}
