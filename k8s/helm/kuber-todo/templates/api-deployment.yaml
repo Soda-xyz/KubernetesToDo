@@ -40,7 +40,15 @@ spec:
               value: "{{ .Values.mongodb.rootPassword }}"
             {{- end }}
             - name: Mongo__ConnectionString
+              {{- if .Values.mongodb.rootPasswordSecretName }}
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.mongodb.rootPasswordSecretName }}"
+                  key: "connectionString"
+              {{- else }}
+              # Fallback: if no secret is provided, build a connection string from available values
               value: {{ printf "mongodb://%s:$(Mongo__Password)@%s:%v/?authSource=admin" .Values.mongodb.rootUsername (include "kuber-todo.fullname" .) .Values.mongodb.service.port | quote }}
+              {{- end }}
             - name: Mongo__Database
               value: "{{ .Values.mongodb.database }}"
           resources: {{ toYaml .Values.resources | nindent 12 }}

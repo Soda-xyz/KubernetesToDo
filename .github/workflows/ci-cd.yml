@@ -11,6 +11,8 @@ permissions:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
+  ARGO_APP_NAME: kuber-todo
+  ARGO_NAMESPACE: argocd
 
 jobs:
   build-and-push:
@@ -71,42 +73,26 @@ jobs:
           sudo mv /tmp/kubeval /usr/local/bin/kubeval
           kubeval --strict --kubernetes-version "1.32.0" --ignore-missing-schemas /tmp/rendered.yaml
 
-      - name: Create/update MongoDB secret
-        env:
-          SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
-          MONGO_PASSWORD: ${{ secrets.MONGODB_ROOT_PASSWORD }}
-          K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
-        run: |
-          if [ -z "$K8S_NAMESPACE" ]; then K8S_NAMESPACE=kuber-todo; fi
-          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
-          if ! kubectl auth can-i create secrets -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-            mkdir -p tmp
-            kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml > tmp/${SECRET_NAME}.yaml || true
-            echo "Rendered secret saved to tmp/${SECRET_NAME}.yaml; cannot create secrets in $K8S_NAMESPACE"
-            exit 1
-          fi
-          kubectl create secret generic "$SECRET_NAME" --from-literal=root-password="$MONGO_PASSWORD" -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
+      # MongoDB secret management removed: secret is expected to be managed out-of-band (SealedSecrets/ExternalSecrets or manual)
 
       - name: Patch ArgoCD Application
         env:
-          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
-          ARGO_NAMESPACE: ${{ secrets.ARGOCD_NAMESPACE }}
+          ARGO_APP_NAME: ${{ env.ARGO_APP_NAME }}
+          ARGO_NAMESPACE: ${{ env.ARGO_NAMESPACE }}
           REGISTRY: ${{ env.ECR_REGISTRY }}
           REPO: ${{ secrets.ECR_REPOSITORY }}
           TAG: ${{ env.IMAGE_TAG }}
-          SECRET_NAME: ${{ secrets.K8S_MONGODB_SECRET_NAME }}
         run: |
-          if [ -z "$ARGO_NAMESPACE" ]; then ARGO_NAMESPACE=argocd; fi
-          if [ -z "$SECRET_NAME" ]; then SECRET_NAME=kuber-todo-mongodb-root; fi
-          VALUES="mongodb:\n  rootPasswordSecretName: \"$SECRET_NAME\"\n  rootPasswordKey: \"root-password\"\nimage:\n  repository: \"${REGISTRY}/${REPO}\"\n  tag: \"${TAG}\""
+          # We hard-code ARGO_APP_NAME/ARGO_NAMESPACE at workflow top-level env. The CI will patch only image values.
+          VALUES="image:\n  repository: \"${REGISTRY}/${REPO}\"\n  tag: \"${TAG}\""
           PATCH_JSON=$(printf "%b" "$VALUES" | python3 -c 'import sys,json; v=sys.stdin.read(); print(json.dumps({"spec":{"source":{"helm":{"values":v}}}}))')
-          kubectl -n "$ARGO_NAMESPACE" patch application "$ARGO_APP_NAME" --type merge -p "$PATCH_JSON"
+          kubectl -n "${ARGO_NAMESPACE}" patch application "${ARGO_APP_NAME}" --type merge -p "$PATCH_JSON"
 
       - name: Trigger ArgoCD sync (API then fallback)
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
-          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
+          ARGO_APP_NAME: ${{ env.ARGO_APP_NAME }}
         run: |
           if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_TOKEN}" ] || [ -z "${ARGO_APP_NAME}" ]; then
             echo "ArgoCD variables missing; skipping sync"
@@ -139,7 +125,7 @@ jobs:
 
       - name: Wait for ArgoCD Application to be Synced and Healthy
         env:
-          ARGO_APP_NAME: ${{ secrets.ARGOCD_APP_NAME }}
+          ARGO_APP_NAME: ${{ env.ARGO_APP_NAME }}
         run: |
           if [ -z "${ARGO_APP_NAME}" ]; then echo "ARGOCD_APP_NAME must be set"; exit 1; fi
           timeout=$((10*60))
@@ -184,4 +170,3 @@ jobs:
           else
             exit 1
           fi
-
