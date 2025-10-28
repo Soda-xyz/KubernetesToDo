@@ -17,15 +17,18 @@ spec:
         ingress:
           host: "todo.example.com"
         mongodb:
+          image:
+            repository: "mongo"
+            tag: "6.0"
           rootPasswordSecretName: kuber-todo-mongodb-root
           rootPasswordKey: root-password
           persistence:
             storageClass: gp2
             type: emptyDir
-        imagePullSecrets:
-          - name: ecr-registry
+        # imagePullSecrets removed — registry is public or managed separately
   destination:
     server: "https://kubernetes.default.svc"
+    namespace: kuber-todo
   syncPolicy:
     automated:
       prune: true
