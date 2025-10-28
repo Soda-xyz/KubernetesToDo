@@ -14,7 +14,7 @@ spec:
       name: mongodb
   selector:
     app: {{ include "kuber-todo.name" . }}
-    component: mongodb
+    app.kubernetes.io/component: mongodb
 
 ---
 # Headless service for StatefulSet DNS
@@ -33,6 +33,6 @@ spec:
       name: mongodb
   selector:
     app: {{ include "kuber-todo.name" . }}
-    component: mongodb
+    app.kubernetes.io/component: mongodb
 {{- end }}
 

@@ -14,4 +14,4 @@ spec:
       name: http
   selector:
     app: {{ include "kuber-todo.name" . }}
-    component: api
+    app.kubernetes.io/component: api

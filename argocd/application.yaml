@@ -27,9 +27,28 @@ spec:
             type: emptyDir
         probes:
           api:
+            startup:
+              httpGet:
+                path: /health
+                port: 80
+              periodSeconds: 10
+              failureThreshold: 30
             readiness:
-              initialDelaySeconds: 15
+              httpGet:
+                path: /health
+                port: 80
+              initialDelaySeconds: 30
+              periodSeconds: 5
               timeoutSeconds: 10
+              failureThreshold: 3
+            liveness:
+              httpGet:
+                path: /health
+                port: 80
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 10
+              failureThreshold: 3
         # imagePullSecrets removed — registry is public or managed separately
   destination:
     server: "https://kubernetes.default.svc"
